@@ -6,8 +6,6 @@
 //=============================================================================
 // Defines
 //=============================================================================
-#define MULTICAST_TARGET    "239.255.77.77"
-#define MULTICAST_PORT      4010
 #define PCM_PAYLOAD_SIZE    1152                        // PCM payload size (divisible by 2, 3 and 4 bytes per sample * 2 channels)
 #define HEADER_SIZE         5                           // m_bSamplingFreqMarker, m_bBitsPerSampleMarker, m_bChannels, m_wChannelMask
 #define CHUNK_SIZE          (PCM_PAYLOAD_SIZE + HEADER_SIZE)      // Add two bytes so we can send a small header with bytes/sample and sampling freq markers
