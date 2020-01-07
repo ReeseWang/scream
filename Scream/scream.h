@@ -67,6 +67,9 @@ DEFINE_GUIDSTRUCT("5B722BF8-F0AB-47ee-B9C8-8D61D31375A1", PID_MSVAD);
 #define MIN_SAMPLE_RATE             44100    // Min Sample Rate
 #define MAX_SAMPLE_RATE             192000   // Max Sample Rate
 
+// EndPoint info
+#define MAX_ENDPOINTS              8
+
 #define DEV_SPECIFIC_VT_BOOL        9
 #define DEV_SPECIFIC_VT_I4          10
 #define DEV_SPECIFIC_VT_UI4         11
@@ -82,6 +85,14 @@ typedef struct _PHYSICALCONNECTIONTABLE {
     ULONG       ulWaveIn;
     ULONG       ulWaveOut;
 } PHYSICALCONNECTIONTABLE, *PPHYSICALCONNECTIONTABLE;
+
+// Module configuration
+typedef struct _MODULEOPTIONS {
+    UINT8   bUseIVSHMEM;
+    UINT8   bSplitChannel;
+    PCHAR   pUnicastIPv4s[MAX_ENDPOINTS];
+    DWORD   dwChannelMasks[MAX_ENDPOINTS];
+} MODULEOPTIONS, *PMODULEOPTIONS;
 
 //=============================================================================
 // Enums

@@ -40,6 +40,49 @@ typedef SAVEWORKER_PARAM *PSAVEWORKER_PARAM;
 //-----------------------------------------------------------------------------
 
 ///////////////////////////////////////////////////////////////////////////////
+// EndPoint
+//   Store information for multiple packet destinations.
+//
+class EndPoint {
+protected:
+    WORD                m_wChannelMask;
+    BYTE                m_bChannels;
+    const BYTE          m_bSamplingFreqMarker;
+    const BYTE          m_bBitsPerSampleMarker;
+    BYTE                m_bBytesPerSample;
+    BYTE                m_bChannelSelectors[MAX_CHANNELS_PCM];
+
+    SOCKADDR_STORAGE    m_sDestination;
+
+    const PBYTE         m_pBuffer;
+    const ULONG         m_ulBufferBeginOffset; //inclusive
+    const ULONG         m_ulBufferEndOffset; //exclusive
+    ULONG               m_ulOffset;
+    ULONG               m_ulSendOffset;
+
+    USHORT              m_usChunkSize;
+public:
+    EndPoint(PCHAR ipaddr,
+        USHORT port,
+        PBYTE pBuffer, 
+        ULONG ulBufferBeginOffset, 
+        ULONG ulBufferEndOffset, 
+        BYTE bBitsPerSampleMarker,
+        BYTE bSamplingFreqMarker,
+        WORD wConfigChannelMask,
+        WORD wInputChannelMask
+        );
+    //~EndPoint();
+
+    void                WriteSample(IN PBYTE pBuffer);
+    inline ULONG        getSendOffset();
+    inline USHORT       getChunkSize();
+
+    void                setNextSendOffset();
+};
+typedef EndPoint* PEndPoint;
+
+///////////////////////////////////////////////////////////////////////////////
 // CSaveData
 //   Saves the wave data to disk.
 //
@@ -68,6 +111,9 @@ protected:
     BYTE                        m_bBitsPerSampleMarker;
     BYTE                        m_bChannels;
     WORD                        m_wChannelMask;
+
+    const BYTE                  m_bNumEndPoints;
+    PEndPoint                   m_pEndPoints[MAX_ENDPOINTS];
 
 public:
     CSaveData();

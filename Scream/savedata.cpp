@@ -9,6 +9,7 @@
 #define PCM_PAYLOAD_SIZE    1152                        // PCM payload size (divisible by 2, 3 and 4 bytes per sample * 2 channels)
 #define HEADER_SIZE         5                           // m_bSamplingFreqMarker, m_bBitsPerSampleMarker, m_bChannels, m_wChannelMask
 #define CHUNK_SIZE          (PCM_PAYLOAD_SIZE + HEADER_SIZE)      // Add two bytes so we can send a small header with bytes/sample and sampling freq markers
+#define MAX_CHUNK_SIZE      (PCM_PAYLOAD_SIZE + HEADER_SIZE)
 #define NUM_CHUNKS          800                         // How many payloads in ring buffer
 #define BUFFER_SIZE         CHUNK_SIZE * NUM_CHUNKS     // Ring buffer size
 
@@ -44,7 +45,7 @@ NTSTATUS WskSampleSyncIrpCompletionRoutine(__in PDEVICE_OBJECT Reserved, __in PI
 //=============================================================================
 
 //=============================================================================
-CSaveData::CSaveData() : m_pBuffer(NULL), m_ulOffset(0), m_ulSendOffset(0), m_fWriteDisabled(FALSE), m_socket(NULL) {
+CSaveData::CSaveData() : m_bNumEndPoints(5), m_pBuffer(NULL), m_ulOffset(0), m_ulSendOffset(0), m_fWriteDisabled(FALSE), m_socket(NULL) {
     PAGED_CODE();
 
     DPF_ENTER(("[CSaveData::CSaveData]"));
@@ -107,6 +108,12 @@ CSaveData::~CSaveData() {
             ExFreePoolWithTag(m_pBuffer, MSVAD_POOLTAG);
             IoFreeMdl(m_pMdl);
         }
+
+        // delete endpoint objects
+        BYTE i;
+        for (i = 0; i < m_bNumEndPoints; i++)
+            if (m_pEndPoints[i])
+                delete m_pEndPoints[i];
     }
 } // CSaveData
 
@@ -182,6 +189,31 @@ NTSTATUS CSaveData::Initialize(DWORD nSamplesPerSec, WORD wBitsPerSample, WORD n
         } else {
             MmBuildMdlForNonPagedPool(m_pMdl);
         }
+    }
+
+    PCHAR ips[] = {
+        "239.255.77.77",
+        "239.255.77.78",
+        "239.255.77.79",
+        "239.255.77.80",
+        "239.255.77.81"
+    };
+    WORD masks[] = { 0x630, 0x400, 0x20C, 0x60C, 0x607 };
+
+    BYTE i;
+    for (i = 0; i < m_bNumEndPoints; i++)
+    {
+        m_pEndPoints[i] = new (NonPagedPool, MSVAD_POOLTAG) EndPoint(
+            ips[i],
+            4010,
+            m_pBuffer,
+            i * (BUFFER_SIZE / m_bNumEndPoints),
+            (i + 1) * (BUFFER_SIZE / m_bNumEndPoints),
+            m_bBitsPerSampleMarker,
+            m_bSamplingFreqMarker,
+            masks[i],
+            m_wChannelMask
+            );
     }
 
     return ntStatus;
@@ -403,3 +435,109 @@ void CSaveData::WriteData(IN PBYTE pBuffer, IN ULONG ulByteCount) {
             IoQueueWorkItem(m_pWorkItem->WorkItem, SendDataWorkerCallback, CriticalWorkQueue, (PVOID)m_pWorkItem);
     }
 } // WriteData
+
+#pragma code_seg()
+EndPoint::EndPoint(
+    PCHAR ipaddr,
+    USHORT port,
+    PBYTE pBuffer,
+    ULONG ulBufferBeginOffset,
+    ULONG ulBufferEndOffset,
+    BYTE bBitsPerSampleMarker,
+    BYTE bSamplingFreqMarker,
+    WORD wConfigChannelMask,
+    WORD wInputChannelMask) :
+    m_pBuffer(pBuffer),
+    m_ulBufferBeginOffset(ulBufferBeginOffset),
+    m_ulBufferEndOffset(ulBufferEndOffset),
+    m_bSamplingFreqMarker(bSamplingFreqMarker),
+    m_bBitsPerSampleMarker(bBitsPerSampleMarker),
+    m_ulOffset(ulBufferBeginOffset),
+    m_ulSendOffset(ulBufferBeginOffset),
+    m_bChannelSelectors()
+{
+    LPCTSTR         terminator;
+    SOCKADDR_IN     endPointAddr = { AF_INET, RtlUshortByteSwap(port), 0, 0 };
+
+    DPF_ENTER(("[EndPoint::EndPoint]"));
+
+    RtlIpv4StringToAddress(ipaddr, true, &terminator, &(endPointAddr.sin_addr));
+    RtlCopyMemory(&m_sDestination, &endPointAddr, sizeof(SOCKADDR_IN));
+
+    m_bBytesPerSample = bBitsPerSampleMarker / 8;
+    //Maybe the input stream doesn't have certain channels in our endpoint configuration.
+    m_wChannelMask = wConfigChannelMask & wInputChannelMask;
+
+    WORD n = m_wChannelMask;
+    WORD m = wInputChannelMask;
+
+    BYTE i = 0;
+    m_bChannels = 0;
+    while (n)
+    {
+        if ((n & 0x0001) != 0) //if this channel is selected by the endpoint
+        {
+            //set 'm_bChannels'th channel selector to be 'i'th channel in the input stream.
+            m_bChannelSelectors[m_bChannels] = i;
+            m_bChannels += 1;
+        }
+        i += m & 0x0001; //if the input stream has this channel, increase counter
+        n >>= 1; //next channel
+        m >>= 1; //next channel
+    }
+
+    if ((m_bBytesPerSample * m_bChannels) == 0)
+        m_usChunkSize = 0; //the endpoint will be disabled anyway
+    else
+        m_usChunkSize = (MAX_CHUNK_SIZE - HEADER_SIZE) / (m_bBytesPerSample * m_bChannels) * 
+            (m_bBytesPerSample * m_bChannels) + HEADER_SIZE;
+}
+
+void EndPoint::WriteSample(IN PBYTE pBuffer)
+{
+    if (m_usChunkSize > 0)
+    {
+        ULONG w = (m_ulOffset - m_ulBufferBeginOffset) % m_usChunkSize;
+        if (w <= 0)
+        { //start a new chunk
+            if ((m_ulBufferEndOffset - m_ulOffset) < m_usChunkSize)
+                m_ulOffset = m_ulBufferBeginOffset;
+            m_pBuffer[m_ulOffset] = m_bSamplingFreqMarker;
+            m_pBuffer[m_ulOffset + 1] = m_bBitsPerSampleMarker;
+            m_pBuffer[m_ulOffset + 2] = m_bChannels;
+            m_pBuffer[m_ulOffset + 3] = (BYTE)(m_wChannelMask & 0xFF);
+            m_pBuffer[m_ulOffset + 4] = (BYTE)(m_wChannelMask >> 8 & 0xFF);
+            m_ulOffset += HEADER_SIZE;
+        }
+
+        //continue to fill the chunk    
+        BYTE i;
+        for (i = 0; i < m_bChannels; i++)
+        {
+            RtlCopyMemory(
+                m_pBuffer + m_ulOffset,
+                pBuffer + m_bChannelSelectors[i] * m_bBytesPerSample,
+                m_bBytesPerSample
+            );
+            m_ulOffset += m_bBytesPerSample;
+        }
+    }
+}
+
+inline ULONG EndPoint::getSendOffset()
+{
+    return m_ulSendOffset;
+}
+
+inline USHORT EndPoint::getChunkSize()
+{
+    return m_usChunkSize;
+}
+
+void EndPoint::setNextSendOffset()
+{
+    if (m_ulBufferEndOffset - m_ulSendOffset < m_usChunkSize)
+        m_ulSendOffset = m_ulBufferBeginOffset;
+    else
+        m_ulSendOffset += m_usChunkSize;
+}
