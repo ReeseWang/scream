@@ -45,7 +45,7 @@ NTSTATUS WskSampleSyncIrpCompletionRoutine(__in PDEVICE_OBJECT Reserved, __in PI
 //=============================================================================
 
 //=============================================================================
-CSaveData::CSaveData() : m_bNumEndPoints(5), m_pBuffer(NULL), m_ulOffset(0), m_ulSendOffset(0), m_fWriteDisabled(FALSE), m_socket(NULL) {
+CSaveData::CSaveData() : m_bNumEndPoints(2), m_pBuffer(NULL), m_ulOffset(0), m_ulSendOffset(0), m_fWriteDisabled(FALSE), m_socket(NULL) {
     PAGED_CODE();
 
     DPF_ENTER(("[CSaveData::CSaveData]"));
@@ -170,6 +170,8 @@ NTSTATUS CSaveData::Initialize(DWORD nSamplesPerSec, WORD wBitsPerSample, WORD n
     m_bBitsPerSampleMarker = (BYTE)(wBitsPerSample);
     m_bChannels = (BYTE)nChannels;
     m_wChannelMask = (WORD)dwChannelMask;
+    m_usBytesPerMultichannelSample = (USHORT)(wBitsPerSample / 8 * nChannels);
+    ASSERT(m_usBytesPerMultichannelSample <= MAX_CHANNELS_PCM * MAX_BITS_PER_SAMPLE_PCM / 8);
 
     // Allocate memory for data buffer.
     if (NT_SUCCESS(ntStatus)) {
@@ -192,13 +194,14 @@ NTSTATUS CSaveData::Initialize(DWORD nSamplesPerSec, WORD wBitsPerSample, WORD n
     }
 
     PCHAR ips[] = {
-        "239.255.77.77",
-        "239.255.77.78",
-        "239.255.77.79",
-        "239.255.77.80",
-        "239.255.77.81"
+        "192.168.91.2",
+        "192.168.91.1",
+        "192.168.91.1",
+        "192.168.91.1",
+        "192.168.91.1",
+        "192.168.91.1"
     };
-    WORD masks[] = { 0x630, 0x400, 0x20C, 0x60C, 0x607 };
+    WORD masks[] = { 0x1, 0x2, 0x4, 0x8, 0x200, 0x400 };
 
     BYTE i;
     for (i = 0; i < m_bNumEndPoints; i++)
@@ -328,8 +331,10 @@ void CSaveData::CreateSocket(void) {
 //=============================================================================
 void CSaveData::SendData() {
     WSK_BUF wskbuf;
+    BYTE i;
+    BOOL notAllSent;
 
-    ULONG storeOffset;
+    //ULONG storeOffset;
     
     if (!m_socket) {
         CreateSocket();
@@ -337,24 +342,27 @@ void CSaveData::SendData() {
     
     if (m_socket) {
         while (1) {
-            // Read latest storeOffset. There might be new data.
-            storeOffset = m_ulOffset;
+            notAllSent = FALSE;
+            for (i = 0; i < m_bNumEndPoints; i++)
+            {
+                notAllSent = notAllSent || m_pEndPoints[i]->hasSomethingToSend();
+                if (m_pEndPoints[i]->hasSomethingToSend())
+                {
+                    wskbuf.Mdl = m_pMdl;
+                    wskbuf.Length = m_pEndPoints[i]->getChunkSize();
+                    wskbuf.Offset = m_pEndPoints[i]->getSendOffset();
+                    IoReuseIrp(m_irp, STATUS_UNSUCCESSFUL);
+                    IoSetCompletionRoutine(m_irp, WskSampleSyncIrpCompletionRoutine, &m_syncEvent, TRUE, TRUE, TRUE);
+                    ((PWSK_PROVIDER_DATAGRAM_DISPATCH)(m_socket->Dispatch))->WskSendTo(m_socket, &wskbuf, 0, (PSOCKADDR)m_pEndPoints[i]->getSockAddr(), 0, NULL, m_irp);
+                    KeWaitForSingleObject(&m_syncEvent, Executive, KernelMode, FALSE, NULL);
+                    DPF(D_TERSE, ("WskSendToEndpoint%d: %x, offset %d", i, m_irp->IoStatus.Status, m_pEndPoints[i]->getSendOffset()));
 
-            // Abort if there's nothing to send. Note: When storeOffset < sendOffset, we can always send a chunk.
-            if ((storeOffset >= m_ulSendOffset) && ((storeOffset - m_ulSendOffset) < CHUNK_SIZE))
+                    m_pEndPoints[i]->setNextSendOffset();
+                }
+            }
+
+            if (!notAllSent)
                 break;
-
-            // Send a chunk
-            wskbuf.Mdl = m_pMdl;
-            wskbuf.Length = CHUNK_SIZE;
-            wskbuf.Offset = m_ulSendOffset;
-            IoReuseIrp(m_irp, STATUS_UNSUCCESSFUL);
-            IoSetCompletionRoutine(m_irp, WskSampleSyncIrpCompletionRoutine, &m_syncEvent, TRUE, TRUE, TRUE);
-            ((PWSK_PROVIDER_DATAGRAM_DISPATCH)(m_socket->Dispatch))->WskSendTo(m_socket, &wskbuf, 0, (PSOCKADDR)&m_sServerAddr, 0, NULL, m_irp);
-            KeWaitForSingleObject(&m_syncEvent, Executive, KernelMode, FALSE, NULL);
-            DPF(D_TERSE, ("WskSendTo: %x", m_irp->IoStatus.Status));
-
-            m_ulSendOffset += CHUNK_SIZE; if (m_ulSendOffset >= BUFFER_SIZE) m_ulSendOffset = 0;
         }
     }
 }
@@ -378,9 +386,6 @@ void CSaveData::WriteData(IN PBYTE pBuffer, IN ULONG ulByteCount) {
 
     LARGE_INTEGER timeOut = { 0 };
     NTSTATUS ntStatus;
-    ULONG offset;
-    ULONG toWrite;
-    ULONG w;
     
     if (m_fWriteDisabled) {
         return;
@@ -398,34 +403,38 @@ void CSaveData::WriteData(IN PBYTE pBuffer, IN ULONG ulByteCount) {
         return;
     }
 
-    // Append to ring buffer. Don't write intermediate states to m_ulOffset,
-    // but update it once at the end.
-    offset = m_ulOffset;
-    toWrite = ulByteCount;
-    while (toWrite > 0) {
-        w = offset % CHUNK_SIZE;
-        if (w > 0) {
-            // Fill up last chunk
-            w = (CHUNK_SIZE - w);
-            w = (toWrite < w) ? toWrite : w;
-            RtlCopyMemory(&(m_pBuffer[offset]), &(pBuffer[ulByteCount - toWrite]), w);
-        }
-        else {
-            // Start a new chunk
-            m_pBuffer[offset]     = m_bSamplingFreqMarker;
-            m_pBuffer[offset + 1] = m_bBitsPerSampleMarker;
-            m_pBuffer[offset + 2] = m_bChannels;
-            m_pBuffer[offset + 3] = (BYTE)(m_wChannelMask    & 0xFF);
-            m_pBuffer[offset + 4] = (BYTE)(m_wChannelMask>>8 & 0xFF);
-            offset += HEADER_SIZE;
-            w = ((BUFFER_SIZE - offset) < toWrite) ? (BUFFER_SIZE - offset) : toWrite;
-            w = (w > PCM_PAYLOAD_SIZE) ? PCM_PAYLOAD_SIZE : w;
-            RtlCopyMemory(&(m_pBuffer[offset]), &(pBuffer[ulByteCount - toWrite]), w);
-        }
-        toWrite -= w;
-        offset += w;  if (offset >= BUFFER_SIZE) offset = 0;
+    BYTE i;
+    ULONG toWrite = ulByteCount;
+    PBYTE pointer = pBuffer;
+    static USHORT bytesRemaining = 0;
+    if (bytesRemaining != 0)
+    {
+        RtlCopyMemory(&(m_MSBuffer[m_usBytesPerMultichannelSample - bytesRemaining]), pointer, bytesRemaining);
+        for (i = 0; i < m_bNumEndPoints; i++)
+            m_pEndPoints[i]->WriteSample(m_MSBuffer);
+        toWrite -= bytesRemaining;
+        pointer += bytesRemaining;
+        bytesRemaining = 0;
     }
-    m_ulOffset = offset;
+    
+    while (toWrite > 0)
+    {
+        if (toWrite < m_usBytesPerMultichannelSample)
+        {
+            RtlCopyMemory(m_MSBuffer, pointer, toWrite);
+            bytesRemaining = m_usBytesPerMultichannelSample - (USHORT)toWrite;
+            toWrite -= toWrite;
+            break;
+        }
+        else
+        {
+            for (i = 0; i < m_bNumEndPoints; i++)
+                m_pEndPoints[i]->WriteSample(pointer);
+            toWrite -= m_usBytesPerMultichannelSample;
+            pointer += m_usBytesPerMultichannelSample;
+        }
+    }
+    ASSERT(toWrite == 0);
 
     // If I/O worker was done, relaunch it
     ntStatus = KeWaitForSingleObject(&(m_pWorkItem->EventDone), Executive, KernelMode, FALSE, &timeOut);
@@ -507,21 +516,42 @@ void EndPoint::WriteSample(IN PBYTE pBuffer)
             m_pBuffer[m_ulOffset + 2] = m_bChannels;
             m_pBuffer[m_ulOffset + 3] = (BYTE)(m_wChannelMask & 0xFF);
             m_pBuffer[m_ulOffset + 4] = (BYTE)(m_wChannelMask >> 8 & 0xFF);
+            DPF(D_TERSE, ("NewChunkAt %d", m_ulOffset));
             m_ulOffset += HEADER_SIZE;
         }
 
         //continue to fill the chunk    
         BYTE i;
+        BYTE j;
+        ULONG offset = m_ulOffset;
         for (i = 0; i < m_bChannels; i++)
         {
-            RtlCopyMemory(
-                m_pBuffer + m_ulOffset,
-                pBuffer + m_bChannelSelectors[i] * m_bBytesPerSample,
+            /*RtlCopyMemory(
+                &(m_pBuffer[m_ulOffset]),
+                &(pBuffer[m_bChannelSelectors[i] * m_bBytesPerSample]),
                 m_bBytesPerSample
-            );
-            m_ulOffset += m_bBytesPerSample;
+            );*/
+            for (j = 0; j < m_bBytesPerSample; j++)
+            {
+                m_pBuffer[offset] = pBuffer[m_bChannelSelectors[i] * m_bBytesPerSample + j];
+                offset++;
+            }
+            //m_ulOffset += m_bBytesPerSample;
         }
+        if (offset < m_ulBufferEndOffset)
+            m_ulOffset = offset;
+        else
+            m_ulOffset = m_ulBufferBeginOffset;
     }
+    ASSERT((m_ulOffset >= m_ulBufferBeginOffset) && (m_ulOffset < m_ulBufferEndOffset));
+}
+
+inline BOOL EndPoint::hasSomethingToSend()
+{
+    // Note: When storeOffset < sendOffset, we can always send a chunk.
+    //BOOL res = !((m_ulOffset >= m_ulSendOffset) && ((m_ulOffset - m_ulSendOffset) < m_usChunkSize));
+    //DPF(D_TERSE, ("%d %d %d", m_ulOffset, m_ulSendOffset, res));
+    return !((m_ulOffset >= m_ulSendOffset) && ((m_ulOffset - m_ulSendOffset) < m_usChunkSize));
 }
 
 inline ULONG EndPoint::getSendOffset()
@@ -534,10 +564,16 @@ inline USHORT EndPoint::getChunkSize()
     return m_usChunkSize;
 }
 
+inline SOCKADDR_STORAGE* EndPoint::getSockAddr()
+{
+    return &m_sDestination;
+}
+
 void EndPoint::setNextSendOffset()
 {
-    if (m_ulBufferEndOffset - m_ulSendOffset < m_usChunkSize)
+    if (m_ulBufferEndOffset < m_ulSendOffset + 2*m_usChunkSize)
         m_ulSendOffset = m_ulBufferBeginOffset;
     else
         m_ulSendOffset += m_usChunkSize;
+    ASSERT((m_ulSendOffset + m_usChunkSize <= m_ulBufferEndOffset) && (m_ulSendOffset >= m_ulBufferBeginOffset));
 }

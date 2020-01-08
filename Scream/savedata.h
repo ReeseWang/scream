@@ -74,9 +74,11 @@ public:
         );
     //~EndPoint();
 
-    void                WriteSample(IN PBYTE pBuffer);
-    inline ULONG        getSendOffset();
-    inline USHORT       getChunkSize();
+    void                        WriteSample(IN PBYTE pBuffer);
+    inline BOOL                 hasSomethingToSend();
+    inline ULONG                getSendOffset();
+    inline USHORT               getChunkSize();
+    inline SOCKADDR_STORAGE*    getSockAddr();
 
     void                setNextSendOffset();
 };
@@ -109,11 +111,13 @@ protected:
 
     BYTE                        m_bSamplingFreqMarker;
     BYTE                        m_bBitsPerSampleMarker;
+    USHORT                      m_usBytesPerMultichannelSample;
     BYTE                        m_bChannels;
     WORD                        m_wChannelMask;
 
     const BYTE                  m_bNumEndPoints;
     PEndPoint                   m_pEndPoints[MAX_ENDPOINTS];
+    BYTE                        m_MSBuffer[MAX_CHANNELS_PCM * MAX_BITS_PER_SAMPLE_PCM / 8]; //temperory buffer for single multi-channel sample
 
 public:
     CSaveData();
