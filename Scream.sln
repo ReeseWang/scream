@@ -14,6 +14,8 @@ Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Win10 Debug|Win32 = Win10 Debug|Win32
 		Win10 Debug|x64 = Win10 Debug|x64
+		Win10 Release|Win32 = Win10 Release|Win32
+		Win10 Release|x64 = Win10 Release|x64
 		Win7 Debug|Win32 = Win7 Debug|Win32
 		Win7 Debug|x64 = Win7 Debug|x64
 		Win7 Release|Win32 = Win7 Release|Win32
@@ -34,6 +36,12 @@ Global
 		{935E45CA-9F82-4163-8A2D-D6BD3AF71FC7}.Win10 Debug|x64.ActiveCfg = Win10 Debug|x64
 		{935E45CA-9F82-4163-8A2D-D6BD3AF71FC7}.Win10 Debug|x64.Build.0 = Win10 Debug|x64
 		{935E45CA-9F82-4163-8A2D-D6BD3AF71FC7}.Win10 Debug|x64.Deploy.0 = Win10 Debug|x64
+		{935E45CA-9F82-4163-8A2D-D6BD3AF71FC7}.Win10 Release|Win32.ActiveCfg = Win10 Release|Win32
+		{935E45CA-9F82-4163-8A2D-D6BD3AF71FC7}.Win10 Release|Win32.Build.0 = Win10 Release|Win32
+		{935E45CA-9F82-4163-8A2D-D6BD3AF71FC7}.Win10 Release|Win32.Deploy.0 = Win10 Release|Win32
+		{935E45CA-9F82-4163-8A2D-D6BD3AF71FC7}.Win10 Release|x64.ActiveCfg = Win10 Release|x64
+		{935E45CA-9F82-4163-8A2D-D6BD3AF71FC7}.Win10 Release|x64.Build.0 = Win10 Release|x64
+		{935E45CA-9F82-4163-8A2D-D6BD3AF71FC7}.Win10 Release|x64.Deploy.0 = Win10 Release|x64
 		{935E45CA-9F82-4163-8A2D-D6BD3AF71FC7}.Win7 Debug|Win32.ActiveCfg = Win7 Release|x64
 		{935E45CA-9F82-4163-8A2D-D6BD3AF71FC7}.Win7 Debug|Win32.Build.0 = Win7 Release|x64
 		{935E45CA-9F82-4163-8A2D-D6BD3AF71FC7}.Win7 Debug|Win32.Deploy.0 = Win7 Release|x64
@@ -76,6 +84,12 @@ Global
 		{099BC98A-37EF-49A5-B66E-E6438B12A140}.Win10 Debug|x64.ActiveCfg = Win10 Debug|x64
 		{099BC98A-37EF-49A5-B66E-E6438B12A140}.Win10 Debug|x64.Build.0 = Win10 Debug|x64
 		{099BC98A-37EF-49A5-B66E-E6438B12A140}.Win10 Debug|x64.Deploy.0 = Win10 Debug|x64
+		{099BC98A-37EF-49A5-B66E-E6438B12A140}.Win10 Release|Win32.ActiveCfg = Win10 Release|Win32
+		{099BC98A-37EF-49A5-B66E-E6438B12A140}.Win10 Release|Win32.Build.0 = Win10 Release|Win32
+		{099BC98A-37EF-49A5-B66E-E6438B12A140}.Win10 Release|Win32.Deploy.0 = Win10 Release|Win32
+		{099BC98A-37EF-49A5-B66E-E6438B12A140}.Win10 Release|x64.ActiveCfg = Win10 Release|x64
+		{099BC98A-37EF-49A5-B66E-E6438B12A140}.Win10 Release|x64.Build.0 = Win10 Release|x64
+		{099BC98A-37EF-49A5-B66E-E6438B12A140}.Win10 Release|x64.Deploy.0 = Win10 Release|x64
 		{099BC98A-37EF-49A5-B66E-E6438B12A140}.Win7 Debug|Win32.ActiveCfg = Win7 Release|x64
 		{099BC98A-37EF-49A5-B66E-E6438B12A140}.Win7 Debug|Win32.Build.0 = Win7 Release|x64
 		{099BC98A-37EF-49A5-B66E-E6438B12A140}.Win7 Debug|Win32.Deploy.0 = Win7 Release|x64
