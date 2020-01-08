@@ -45,7 +45,7 @@ NTSTATUS WskSampleSyncIrpCompletionRoutine(__in PDEVICE_OBJECT Reserved, __in PI
 //=============================================================================
 
 //=============================================================================
-CSaveData::CSaveData() : m_bNumEndPoints(2), m_pBuffer(NULL), m_ulOffset(0), m_ulSendOffset(0), m_fWriteDisabled(FALSE), m_socket(NULL) {
+CSaveData::CSaveData() : m_bNumEndPoints(3), m_pBuffer(NULL), m_ulOffset(0), m_ulSendOffset(0), m_fWriteDisabled(FALSE), m_socket(NULL) {
     PAGED_CODE();
 
     DPF_ENTER(("[CSaveData::CSaveData]"));
@@ -196,7 +196,7 @@ NTSTATUS CSaveData::Initialize(DWORD nSamplesPerSec, WORD wBitsPerSample, WORD n
     PCHAR ips[] = {
         "192.168.91.2",
         "192.168.91.1",
-        "192.168.91.1",
+        "192.168.91.212",
         "192.168.91.1",
         "192.168.91.1",
         "192.168.91.1"
@@ -496,7 +496,7 @@ EndPoint::EndPoint(
     }
 
     if ((m_bBytesPerSample * m_bChannels) == 0)
-        m_usChunkSize = 0; //the endpoint will be disabled anyway
+        m_usChunkSize = 0; //flagging the endpoint as disabled
     else
         m_usChunkSize = (MAX_CHUNK_SIZE - HEADER_SIZE) / (m_bBytesPerSample * m_bChannels) * 
             (m_bBytesPerSample * m_bChannels) + HEADER_SIZE;
@@ -551,7 +551,7 @@ inline BOOL EndPoint::hasSomethingToSend()
     // Note: When storeOffset < sendOffset, we can always send a chunk.
     //BOOL res = !((m_ulOffset >= m_ulSendOffset) && ((m_ulOffset - m_ulSendOffset) < m_usChunkSize));
     //DPF(D_TERSE, ("%d %d %d", m_ulOffset, m_ulSendOffset, res));
-    return !((m_ulOffset >= m_ulSendOffset) && ((m_ulOffset - m_ulSendOffset) < m_usChunkSize));
+    return (m_usChunkSize != 0) && !((m_ulOffset >= m_ulSendOffset) && ((m_ulOffset - m_ulSendOffset) < m_usChunkSize));
 }
 
 inline ULONG EndPoint::getSendOffset()
