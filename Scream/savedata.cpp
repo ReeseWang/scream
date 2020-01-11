@@ -332,7 +332,7 @@ void CSaveData::CreateSocket(void) {
 //=============================================================================
 void CSaveData::SendData() {
     WSK_BUF wskbuf;
-    BYTE i;
+    BYTE i, j;
     BOOL notAllSent;
 
     //ULONG storeOffset;
@@ -346,6 +346,32 @@ void CSaveData::SendData() {
             notAllSent = FALSE;
             for (i = 0; i < m_bNumEndPoints; i++)
             {
+                notAllSent = notAllSent || m_pEndPoints[i]->hasSomethingToSend();
+                if (m_pEndPoints[i]->hasSomethingToSend())
+                {
+                    wskbuf.Mdl = m_pMdl;
+                    wskbuf.Length = m_pEndPoints[i]->getChunkSize();
+                    wskbuf.Offset = m_pEndPoints[i]->getSendOffset();
+                    IoReuseIrp(m_irp, STATUS_UNSUCCESSFUL);
+                    IoSetCompletionRoutine(m_irp, WskSampleSyncIrpCompletionRoutine, &m_syncEvent, TRUE, TRUE, TRUE);
+                    ((PWSK_PROVIDER_DATAGRAM_DISPATCH)(m_socket->Dispatch))->WskSendTo(m_socket, &wskbuf, 0, (PSOCKADDR)m_pEndPoints[i]->getSockAddr(), 0, NULL, m_irp);
+                    KeWaitForSingleObject(&m_syncEvent, Executive, KernelMode, FALSE, NULL);
+                    DPF(D_TERSE, ("WskSendToEndpoint%d: %x, offset %d", i, m_irp->IoStatus.Status, m_pEndPoints[i]->getSendOffset()));
+
+                    m_pEndPoints[i]->setNextSendOffset();
+                }
+            }
+
+            if (!notAllSent)
+                break;
+            
+            //Traverse endpoints in reverse order so that statistically each endpoint receive packets at the same time
+            //Then endpoints can achieve pseudo-synchronization using predictive algorithm.
+            notAllSent = FALSE;
+            for (j = 0; j < m_bNumEndPoints; j++)
+            {
+                i = m_bNumEndPoints - 1 - j;
+
                 notAllSent = notAllSent || m_pEndPoints[i]->hasSomethingToSend();
                 if (m_pEndPoints[i]->hasSomethingToSend())
                 {
