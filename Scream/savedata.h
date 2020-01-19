@@ -117,6 +117,7 @@ protected:
 
     const BYTE                  m_bNumEndPoints;
     PEndPoint                   m_pEndPoints[MAX_ENDPOINTS];
+    ULONG                       m_ulBytesRemaining;
     BYTE                        m_MSBuffer[MAX_CHANNELS_PCM * MAX_BITS_PER_SAMPLE_PCM / 8]; //temperory buffer for single multi-channel sample
 
 public:

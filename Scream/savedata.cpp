@@ -45,7 +45,7 @@ NTSTATUS WskSampleSyncIrpCompletionRoutine(__in PDEVICE_OBJECT Reserved, __in PI
 //=============================================================================
 
 //=============================================================================
-CSaveData::CSaveData() : m_bNumEndPoints(5), m_pBuffer(NULL), m_ulOffset(0), m_ulSendOffset(0), m_fWriteDisabled(FALSE), m_socket(NULL) {
+CSaveData::CSaveData() : m_ulBytesRemaining(0), m_bNumEndPoints(8), m_pBuffer(NULL), m_ulOffset(0), m_ulSendOffset(0), m_fWriteDisabled(FALSE), m_socket(NULL) {
     PAGED_CODE();
 
     DPF_ENTER(("[CSaveData::CSaveData]"));
@@ -194,15 +194,17 @@ NTSTATUS CSaveData::Initialize(DWORD nSamplesPerSec, WORD wBitsPerSample, WORD n
     }
 
     PCHAR ips[] = {
-        "192.168.90.241",
-        "192.168.90.242",
-        "192.168.90.243",
-        "192.168.90.244",
-        "192.168.90.245",
-        "239.255.77.78"
+        "192.168.91.1",
+        "192.168.91.1",
+        "192.168.91.1",
+        "192.168.91.1",
+        "192.168.91.1",
+        "192.168.91.1",
+        "192.168.91.1",
+        "192.168.91.1"
     };
-    USHORT ports[] = { 4010, 4010, 4010, 4010, 4010, 4015 };
-    WORD masks[] = { 0x1, 0x2, 0x400, 0x200, 0x4, 0x400 };
+    USHORT ports[] = { 4011, 4012, 4013, 4014, 4015, 4016, 4017, 4018 };
+    WORD masks[] = { 0x1, 0x2, 0x400, 0x200, 0x20, 0x10, 0x4, 0x8 };
 
     BYTE i;
     for (i = 0; i < m_bNumEndPoints; i++)
@@ -433,23 +435,22 @@ void CSaveData::WriteData(IN PBYTE pBuffer, IN ULONG ulByteCount) {
     BYTE i;
     ULONG toWrite = ulByteCount;
     PBYTE pointer = pBuffer;
-    static ULONG bytesRemaining = 0;
-    if (bytesRemaining != 0)
+    if (m_ulBytesRemaining != 0)
     {
         ULONG toCopy;
-        if (bytesRemaining > ulByteCount) //if still not enough bytes
+        if (m_ulBytesRemaining > ulByteCount) //if still not enough bytes
             toCopy = ulByteCount;
         else
-            toCopy = bytesRemaining;
-        RtlCopyMemory(&(m_MSBuffer[m_usBytesPerMultichannelSample - bytesRemaining]), pointer, toCopy);
+            toCopy = m_ulBytesRemaining;
+        RtlCopyMemory(&(m_MSBuffer[m_usBytesPerMultichannelSample - m_ulBytesRemaining]), pointer, toCopy);
 
-        if (bytesRemaining <= ulByteCount)
+        if (m_ulBytesRemaining <= ulByteCount)
             for (i = 0; i < m_bNumEndPoints; i++)
                 m_pEndPoints[i]->WriteSample(m_MSBuffer);
 
         toWrite -= toCopy;
         pointer += toCopy;
-        bytesRemaining -= toCopy;
+        m_ulBytesRemaining -= toCopy;
     }
     
     while (toWrite > 0)
@@ -457,7 +458,7 @@ void CSaveData::WriteData(IN PBYTE pBuffer, IN ULONG ulByteCount) {
         if (toWrite < m_usBytesPerMultichannelSample)
         {
             RtlCopyMemory(m_MSBuffer, pointer, toWrite);
-            bytesRemaining = m_usBytesPerMultichannelSample - (USHORT)toWrite;
+            m_ulBytesRemaining = m_usBytesPerMultichannelSample - (USHORT)toWrite;
             toWrite -= toWrite;
             break;
         }
